@@ -1,5 +1,6 @@
 ﻿@page "/"
 @inject Application application
+@inject ProcessRunnerInvoker processRunner
 @implements IDisposable
 
 <style>
@@ -19,6 +20,7 @@
             <th>Replicas</th>
             <th>Restarts</th>
             <th>Logs</th>
+            <th>Actions</th>
         </tr>
     </thead>
     <tbody>
@@ -85,13 +87,20 @@
                 </td>
                 @if(service.ServiceType == ServiceType.External)
                 {
-                    <td colspan=3></td>
+                    <td colspan=4></td>
                 }
                 else
                 {
                     <td>@service.Replicas.Count/@service.Description.Replicas</td>
                     <td>@service.Restarts</td>
                     <td><NavLink href="@logsPath">View</NavLink></td>
+                    <td>
+                        @if (service.Replicas.Any()) {
+                            <button @onclick="() => OnServiceStop(service)" class="btn btn-danger">Stop</button>
+                        } else {
+                            <button @onclick="() => OnServiceStart(service)" class="btn btn-success">Start</button>
+                        }
+                    </td>
                 }
             </tr>
         }
@@ -117,7 +126,32 @@
 
     private void OnReplicaChanged(ReplicaEvent replicaEvent)
     {
-        InvokeAsync(() => StateHasChanged());
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnServiceStop(Service service)
+    {
+        if (service is null)
+            throw new Exception("Expecting service to not be null.");
+        
+        var dict = new Dictionary<string, Service>
+        {
+            [service.Description.Name] = service
+        };
+        
+        await processRunner(p => p.KillRunningProcesses(dict));
+    }
+
+    private async Task OnServiceStart(Service service)
+    {
+        if (service is null)
+            throw new Exception("Expecting service to not be null.");
+
+        await processRunner(p =>
+        {
+            p.LaunchService(application, service);
+            return Task.CompletedTask;
+        });
     }
 
     void IDisposable.Dispose()

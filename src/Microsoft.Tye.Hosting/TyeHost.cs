@@ -16,6 +16,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
@@ -83,7 +84,20 @@ namespace Microsoft.Tye.Hosting
 
         public async Task<IHost> StartAsync()
         {
-            var app = BuildWebApplication(_application, _options, Sink);
+            async Task RunProcessRunnerCallback(Func<ProcessRunner, Task> callback)
+            {
+                var p = _processor?
+                    .GetProcessors()
+                    .OfType<ProcessRunner>()
+                    .FirstOrDefault();
+
+                if (p is null)
+                    return;
+
+                await callback(p);
+            }
+
+            var app = BuildWebApplication(_application, _options, Sink, RunProcessRunnerCallback);
             DashboardWebApplication = app;
 
             _logger = DashboardWebApplication.Services.GetRequiredService<ILogger<TyeHost>>();
@@ -134,9 +148,13 @@ namespace Microsoft.Tye.Hosting
             return app;
         }
 
-        private IHost BuildWebApplication(Application application, HostOptions options, ILogEventSink? sink)
+        private IHost BuildWebApplication(Application application, HostOptions options, ILogEventSink? sink, ProcessRunnerInvoker processRunnerInvoker)
         {
             return Host.CreateDefaultBuilder()
+                .ConfigureHostConfiguration(x =>
+                {
+                    x.AddInMemoryCollection(new Dictionary<string, string> { ["Environment"] = "Development" });
+                })
                 .UseSerilog((context, configuration) =>
                 {
                     var logLevel = options.LogVerbosity switch
@@ -181,7 +199,10 @@ namespace Microsoft.Tye.Hosting
                         o.RootDirectory = "/Dashboard/Pages";
                     });
 
-                    services.AddServerSideBlazor();
+                    services.AddServerSideBlazor(o =>
+                    {
+                        o.DetailedErrors = true;
+                    });
                     services.AddOptions<StaticFileOptions>()
                             .PostConfigure(o =>
                             {
@@ -204,6 +225,7 @@ namespace Microsoft.Tye.Hosting
                                     });
                             });
                     services.AddSingleton(application);
+                    services.AddSingleton(processRunnerInvoker);
                 })
                 .Build();
         }

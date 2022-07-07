@@ -19,6 +19,8 @@ namespace Microsoft.Tye.Hosting
             _applicationProcessors = applicationProcessors;
         }
 
+        public IEnumerable<IApplicationProcessor> GetProcessors() => _applicationProcessors;
+
         public async Task StartAsync(Application application)
         {
             foreach (var processor in _applicationProcessors)
